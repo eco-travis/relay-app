@@ -1,0 +1,25 @@
+{
+  "name": "relay",
+  "version": "1.0.0",
+  "description": "SEO pipeline: Trello → Claude → GitHub → Netlify",
+  "scripts": {
+    "dev": "tsx watch src/index.ts",
+    "build": "tsc",
+    "start": "node dist/index.js",
+    "setup-webhook": "tsx src/setup-webhook.ts",
+    "delete-webhook": "tsx src/delete-webhook.ts"
+  },
+  "dependencies": {
+    "@anthropic-ai/sdk": "^0.39.0",
+    "dotenv": "^16.0.0",
+    "express": "^4.18.2",
+    "serverless-http": "^3.2.0"
+  },
+  "devDependencies": {
+    "@netlify/functions": "^2.6.0",
+    "@types/express": "^4.17.21",
+    "@types/node": "^20.0.0",
+    "tsx": "^4.7.0",
+    "typescript": "^5.3.0"
+  }
+}
