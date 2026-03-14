@@ -106,14 +106,23 @@ export async function openPR(
 }
 
 export async function getPreviewUrl(prNumber: number): Promise<string | null> {
-  const data     = await gh(`/repos/${getOwner()}/${getRepo()}/pulls/${prNumber}`)
-  const sha      = data.head.sha
-  const statuses = await gh(`/repos/${getOwner()}/${getRepo()}/statuses/${sha}`)
-  const netlify  = statuses.find(
-    (s: { context: string; target_url: string }) =>
-      s.context?.includes('netlify') && s.target_url
-  )
-  return netlify?.target_url ?? null
+  const data: any = await gh(`/repos/${getOwner()}/${getRepo()}/pulls/${prNumber}`)
+  const sha = data.head.sha
+
+  // Use deployments API to get the actual preview URL (not the build details page)
+  const deployments = (await gh(`/repos/${getOwner()}/${getRepo()}/deployments?sha=${sha}`)) as any[]
+
+  for (const deployment of deployments) {
+    const statuses = (await gh(
+      `/repos/${getOwner()}/${getRepo()}/deployments/${deployment.id}/statuses`
+    )) as any[]
+    const successful = statuses.find((s: any) => s.state === 'success')
+    if (successful?.environment_url) {
+      return successful.environment_url
+    }
+  }
+
+  return null
 }
 
 export async function getPRForBranch(branchName: string): Promise<number | null> {
