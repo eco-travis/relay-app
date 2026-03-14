@@ -56,17 +56,19 @@ async function handleWebhook(req: express.Request, res: express.Response) {
 
   if (!card || listBefore === listAfter) return res.sendStatus(200)
 
-  // Process the webhook and THEN respond (required for serverless functions)
-  try {
-    if (listAfter === LIST_IDS.readyToBuild) {
-      await handleCardMoved(card.id, 'ready-to-build')
-    } else if (listAfter === LIST_IDS.readyToPublish) {
-      await handleCardMoved(card.id, 'ready-to-publish')
-    }
-    res.sendStatus(200)
-  } catch (err) {
-    console.error('Pipeline error:', err)
-    res.sendStatus(500)
+  // Respond to Trello immediately BEFORE processing
+  // This prevents timeout errors in serverless functions
+  res.sendStatus(200)
+
+  // Process pipeline asynchronously (fire and forget)
+  if (listAfter === LIST_IDS.readyToBuild) {
+    handleCardMoved(card.id, 'ready-to-build').catch(err => {
+      console.error('❌ Build pipeline error:', err)
+    })
+  } else if (listAfter === LIST_IDS.readyToPublish) {
+    handleCardMoved(card.id, 'ready-to-publish').catch(err => {
+      console.error('❌ Publish pipeline error:', err)
+    })
   }
 }
 
