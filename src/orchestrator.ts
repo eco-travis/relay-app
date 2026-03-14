@@ -22,7 +22,6 @@ import {
   extractGoogleDocId,
   fetchGoogleDocContent,
 } from './google-docs-client'
-import { getRepoContext, getSimilarPages } from './repo-context'
 
 const LIST_IDS = {
   readyToPreview: process.env.TRELLO_LIST_READY_TO_PREVIEW!,
@@ -45,6 +44,24 @@ function slugify(text: string): string {
     .replace(/[^a-z0-9]+/g, '-')
     .replace(/(^-|-$)/g, '')
     .slice(0, 50)
+}
+
+/**
+ * Convert a file path to a preview page URL
+ * e.g., "src/pages/invisalign.tsx" -> "/invisalign"
+ *       "src/pages/index.tsx" -> "/"
+ */
+function filePathToPageUrl(filePath: string): string {
+  // Remove src/pages/ prefix and .tsx extension
+  const slug = filePath
+    .replace(/^src\/pages\//, '')
+    .replace(/\.tsx$/, '')
+
+  // Handle index page
+  if (slug === 'index') return '/'
+
+  // Return with leading slash
+  return `/${slug}`
 }
 
 export async function handleCardMoved(
@@ -227,8 +244,24 @@ ${generation.summary}
       console.log(`      ⚠️  Preview URL not available after polling`)
     }
 
+    // Build list of changed pages with direct preview links
+    let pageLinks = ''
+    if (previewUrl) {
+      const changedPages = generation.files
+        .filter(f => f.path.startsWith('src/pages/'))
+        .map(f => {
+          const pageUrl = filePathToPageUrl(f.path)
+          const fullUrl = `${previewUrl}${pageUrl}`
+          return `- [${pageUrl}](${fullUrl})`
+        })
+
+      if (changedPages.length > 0) {
+        pageLinks = `\n\n**Pages changed:**\n${changedPages.join('\n')}`
+      }
+    }
+
     const comment = previewUrl
-      ? `🔍 **Preview ready:** ${previewUrl}\n\nPR: ${pr.html_url}\n\n✅ Move to **Ready to Publish** to go live\n🔄 Need changes? Update the card description and drag back to **Ready to Build**`
+      ? `🔍 **Preview ready:** ${previewUrl}${pageLinks}\n\n**PR:** ${pr.html_url}\n\n✅ Move to **Ready to Publish** to go live\n🔄 Need changes? Update the card description and drag back to **Ready to Build**`
       : `🔍 PR ready: ${pr.html_url}\n\n_(Preview URL not yet available — check Netlify dashboard)_\n\n✅ Move to **Ready to Publish** to go live`
 
     await postComment(cardId, comment)

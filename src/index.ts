@@ -20,6 +20,7 @@ const LIST_IDS = {
 
 // Trello sends HEAD to verify endpoint exists
 app.head('/webhook/trello', (_req, res) => res.sendStatus(200))
+app.head('/', (_req, res) => res.sendStatus(200))
 
 function verifyTrelloSignature(req: express.Request): boolean {
   const signature = req.headers['x-trello-webhook'] as string
@@ -40,7 +41,7 @@ function verifyTrelloSignature(req: express.Request): boolean {
   return hash === signature
 }
 
-app.post('/webhook/trello', async (req, res) => {
+async function handleWebhook(req: express.Request, res: express.Response) {
   if (!verifyTrelloSignature(req)) {
     console.warn('Invalid Trello signature')
     return res.status(401).json({ error: 'Invalid signature' })
@@ -55,18 +56,30 @@ app.post('/webhook/trello', async (req, res) => {
 
   if (!card || listBefore === listAfter) return res.sendStatus(200)
 
-  // Respond to Trello immediately — process async
-  res.sendStatus(200)
-
+  // Process the webhook and THEN respond (required for serverless functions)
   try {
     if (listAfter === LIST_IDS.readyToBuild) {
       await handleCardMoved(card.id, 'ready-to-build')
     } else if (listAfter === LIST_IDS.readyToPublish) {
       await handleCardMoved(card.id, 'ready-to-publish')
     }
+    res.sendStatus(200)
   } catch (err) {
     console.error('Pipeline error:', err)
+    res.sendStatus(500)
   }
+}
+
+app.post('/webhook/trello', handleWebhook)
+
+// Handle webhooks at root (for Netlify Functions routing)
+app.post('/', async (req, res) => {
+  // Check if this is a webhook call (has Trello signature) or just a regular request
+  if (req.headers['x-trello-webhook']) {
+    return handleWebhook(req, res)
+  }
+  // If not a webhook, return health check
+  res.json({ status: 'ok', app: 'relay-app' })
 })
 
 // Health check
