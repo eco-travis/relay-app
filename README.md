@@ -4,22 +4,20 @@ SEO pipeline: Trello card → Claude → GitHub PR → Netlify preview → merge
 
 ## How it works
 
-1. SEO person creates a Trello card with a page target in the title (e.g. `Update /invisalign SEO`) and writes the brief in the card description
-2. Moving the card to **Ready to Build** triggers the pipeline
-3. Claude reads the card, fetches the current page from GitHub, generates the changes
-4. A PR is opened and the Netlify preview URL is posted back to the card
-5. Moving the card to **Approved** merges the PR to master and triggers a live deploy
+1. **Create card**: SEO person creates a Trello card with a page target in the title (e.g. `Update /invisalign SEO`) and writes the brief in the card description
+2. **Build preview**: Move card to **Ready to Build** → Claude generates changes → PR opened → Netlify preview posted
+3. **Review & iterate**:
+   - ✅ Happy with preview? → Move to **Ready to Publish** (skip to step 4)
+   - 🔄 Need changes? → Update card description with new instructions → Drag back to **Ready to Build** → Get updated preview
+4. **Publish**: Move card to **Ready to Publish** → PR merges to master → Card moves to **Done**
 
 ## Trello board setup
 
 Your board needs these lists (in order):
-- Backlog
-- Ready to Build  ← moving here kicks off generation
-- In Progress
-- Preview Ready
-- Approved        ← moving here merges to master
-- Live
-- Failed
+- **Ready to Build** ← Drag here to generate preview (initial build or rebuild)
+- **Ready to Preview** ← Cards auto-move here after preview is ready
+- **Ready to Publish** ← Drag here to merge to master and go live
+- **Done** ← Cards auto-move here after publishing
 
 ## Getting started
 

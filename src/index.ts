@@ -14,8 +14,8 @@ app.use(express.json())
 const TRELLO_SECRET = process.env.TRELLO_WEBHOOK_SECRET!
 
 const LIST_IDS = {
-  readyToBuild: process.env.TRELLO_LIST_READY_TO_BUILD!,
-  approved:     process.env.TRELLO_LIST_APPROVED!,
+  readyToBuild:    process.env.TRELLO_LIST_READY_TO_BUILD!,
+  readyToPublish:  process.env.TRELLO_LIST_READY_TO_PUBLISH!,
 }
 
 // Trello sends HEAD to verify endpoint exists
@@ -61,8 +61,8 @@ app.post('/webhook/trello', async (req, res) => {
   try {
     if (listAfter === LIST_IDS.readyToBuild) {
       await handleCardMoved(card.id, 'ready-to-build')
-    } else if (listAfter === LIST_IDS.approved) {
-      await handleCardMoved(card.id, 'approved')
+    } else if (listAfter === LIST_IDS.readyToPublish) {
+      await handleCardMoved(card.id, 'ready-to-publish')
     }
   } catch (err) {
     console.error('Pipeline error:', err)

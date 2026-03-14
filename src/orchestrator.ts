@@ -25,10 +25,9 @@ import {
 import { getRepoContext, getSimilarPages } from './repo-context'
 
 const LIST_IDS = {
-  inProgress:   process.env.TRELLO_LIST_IN_PROGRESS!,
-  previewReady: process.env.TRELLO_LIST_PREVIEW_READY!,
-  live:         process.env.TRELLO_LIST_LIVE!,
-  failed:       process.env.TRELLO_LIST_FAILED!,
+  readyToPreview: process.env.TRELLO_LIST_READY_TO_PREVIEW!,
+  readyToPublish: process.env.TRELLO_LIST_READY_TO_PUBLISH!,
+  done:           process.env.TRELLO_LIST_DONE!,
 }
 
 // Parse page path from card title e.g. "Update /invisalign SEO" → "src/pages/invisalign.tsx"
@@ -50,12 +49,12 @@ function slugify(text: string): string {
 
 export async function handleCardMoved(
   cardId: string,
-  event: 'ready-to-build' | 'approved'
+  event: 'ready-to-build' | 'ready-to-publish'
 ) {
   if (event === 'ready-to-build') {
     await runBuildPipeline(cardId)
-  } else if (event === 'approved') {
-    await runApprovalPipeline(cardId)
+  } else if (event === 'ready-to-publish') {
+    await runPublishPipeline(cardId)
   }
 }
 
@@ -69,22 +68,49 @@ async function runBuildPipeline(cardId: string) {
     console.log(`║ 🏗️  BUILD PIPELINE STARTED`)
     console.log(`╚═══════════════════════════════════════════════════════════════`)
 
-    console.log(`\n[1/9] 📥 Fetching card details...`)
+    console.log(`\n[1/2] 📥 Fetching card details...`)
     card = await getCard(cardId)
     console.log(`      Card: "${card.name}"`)
     console.log(`      Description: ${card.desc.substring(0, 100)}${card.desc.length > 100 ? '...' : ''}`)
 
-    console.log(`\n[2/9] 📌 Moving card to "In Progress" list...`)
-    await moveCardToList(cardId, LIST_IDS.inProgress)
+    // Check if this is a rebuild (existing PR) or initial build
+    console.log(`\n[2/2] 🔍 Checking for existing PR...`)
+    const branchName = `seo/${slugify(card.name)}-${cardId.slice(-6)}`
+    const existingPR = await getPRForBranch(branchName)
+
+    if (existingPR) {
+      console.log(`      🔄 Found existing PR #${existingPR} - running rebuild`)
+      await runRebuild(cardId, card, branchName, existingPR)
+    } else {
+      console.log(`      🆕 No existing PR - running initial build`)
+      await runInitialBuild(cardId, card, branchName)
+    }
+
+  } catch (err: any) {
+    console.error('\n╔═══════════════════════════════════════════════════════════════')
+    console.error('║ ❌ BUILD PIPELINE FAILED')
+    console.error('╚═══════════════════════════════════════════════════════════════')
+    console.error('Error:', err)
+    if (card) {
+      await postComment(cardId, `❌ Build failed: ${err.message}`)
+    }
+    console.error('')
+  }
+}
+
+// ─── Initial Build ───────────────────────────────────────────────────────────
+
+async function runInitialBuild(cardId: string, card: any, branchName: string) {
+  try {
     await postComment(cardId, '⚙️ Build started — generating SEO changes...')
 
     // Check for Google Docs links in description
-    console.log(`\n[3/9] 🔍 Checking for Google Docs links...`)
+    console.log(`\n[1/9] 🔍 Checking for Google Docs links...`)
     const googleDocLinks = extractGoogleDocLinks(card.desc)
     console.log(`      Found ${googleDocLinks.length} Google Doc link(s)`)
 
     // Try to parse page path from card title
-    console.log(`\n[4/9] 🔍 Parsing page path from card title...`)
+    console.log(`\n[2/9] 🔍 Parsing page path from card title...`)
     const pagePath = parsePagePath(card.name)
     if (pagePath) {
       console.log(`      Target file: ${pagePath}`)
@@ -93,7 +119,7 @@ async function runBuildPipeline(cardId: string) {
     }
 
     // Fetch current file from master (may not exist for new pages)
-    console.log(`\n[5/9] 📂 Fetching existing file from GitHub...`)
+    console.log(`\n[3/9] 📂 Fetching existing file from GitHub...`)
     const existingFiles: Record<string, string> = {}
     if (pagePath) {
       try {
@@ -110,7 +136,7 @@ async function runBuildPipeline(cardId: string) {
     // Pull down Google Docs content
     const attachments: string[] = []
     if (googleDocLinks.length > 0) {
-      console.log(`\n[6/9] 📄 Fetching Google Docs content...`)
+      console.log(`\n[4/9] 📄 Fetching Google Docs content...`)
       for (const link of googleDocLinks) {
         const docId = extractGoogleDocId(link)
         if (docId) {
@@ -123,13 +149,13 @@ async function runBuildPipeline(cardId: string) {
         }
       }
     } else {
-      console.log(`\n[6/9] 📄 No Google Docs to fetch`)
+      console.log(`\n[4/9] 📄 No Google Docs to fetch`)
     }
 
     // Pull down any text attachments (keyword briefs, etc.)
-    console.log(`\n[7/9] 📎 Checking for Trello attachments...`)
+    console.log(`\n[5/9] 📎 Checking for Trello attachments...`)
     const textAttachments = (card.attachments ?? []).filter(
-      att => att.mimeType?.startsWith('text') || att.name?.endsWith('.md')
+      (att: any) => att.mimeType?.startsWith('text') || att.name?.endsWith('.md')
     )
     console.log(`      Found ${textAttachments.length} text attachment(s)`)
 
@@ -143,7 +169,7 @@ async function runBuildPipeline(cardId: string) {
     }
 
     // Generate changes with Claude
-    console.log(`\n[8/9] 🤖 Calling Claude to generate changes...`)
+    console.log(`\n[6/9] 🤖 Calling Claude to generate changes...`)
     const generation = await generateChanges({
       prompt:        card.desc,
       pageTarget:    pagePath || 'To be determined from brief',
@@ -154,15 +180,14 @@ async function runBuildPipeline(cardId: string) {
     console.log(`      Files modified: ${Object.keys(generation.files).length}`)
 
     // Create branch and commit
-    const branchName = `seo/${slugify(card.name)}-${cardId.slice(-6)}`
-    console.log(`\n[9/11] 🌿 Creating Git branch: ${branchName}`)
+    console.log(`\n[7/9] 🌿 Creating Git branch: ${branchName}`)
     const masterSha  = await getMasterSha()
     console.log(`      Base SHA: ${masterSha.substring(0, 7)}`)
 
     await createBranch(branchName, masterSha)
     console.log(`      ✅ Branch created`)
 
-    console.log(`\n[10/11] 💾 Committing files to branch...`)
+    console.log(`\n[8/9] 💾 Committing files to branch...`)
     await commitFiles(
       branchName,
       generation.files,
@@ -171,7 +196,7 @@ async function runBuildPipeline(cardId: string) {
     console.log(`      ✅ Files committed`)
 
     // Open PR
-    console.log(`\n[11/11] 📬 Opening Pull Request...`)
+    console.log(`\n[9/9] 📬 Opening Pull Request...`)
     const prBody = `
 ## SEO Change Request
 **Trello card:** https://trello.com/c/${cardId}
@@ -183,7 +208,7 @@ ${card.desc}
 ${generation.summary}
 
 ---
-*Generated by Greenlit. Approve by moving the Trello card to "Approved".*
+*Generated by Greenlit. Review the preview and move to "Ready to Publish" when approved.*
     `.trim()
 
     const pr = await openPR(branchName, `SEO: ${card.name}`, prBody)
@@ -203,46 +228,153 @@ ${generation.summary}
     }
 
     const comment = previewUrl
-      ? `🔍 **Preview ready:** ${previewUrl}\n\nPR: ${pr.html_url}\n\nMove this card to **Approved** to publish live, or **Failed** to discard.`
-      : `🔍 PR ready: ${pr.html_url}\n\n_(Preview URL not yet available — check Netlify dashboard)_\n\nMove to **Approved** to publish.`
+      ? `🔍 **Preview ready:** ${previewUrl}\n\nPR: ${pr.html_url}\n\n✅ Move to **Ready to Publish** to go live\n🔄 Need changes? Update the card description and drag back to **Ready to Build**`
+      : `🔍 PR ready: ${pr.html_url}\n\n_(Preview URL not yet available — check Netlify dashboard)_\n\n✅ Move to **Ready to Publish** to go live`
 
     await postComment(cardId, comment)
 
-    console.log(`\n📌 Moving card to "Preview Ready" list...`)
-    await moveCardToList(cardId, LIST_IDS.previewReady)
+    console.log(`\n📌 Moving card to "Ready to Preview" list...`)
+    await moveCardToList(cardId, LIST_IDS.readyToPreview)
 
     console.log(`\n╔═══════════════════════════════════════════════════════════════`)
-    console.log(`║ ✅ BUILD PIPELINE COMPLETED SUCCESSFULLY`)
+    console.log(`║ ✅ INITIAL BUILD COMPLETED SUCCESSFULLY`)
     console.log(`╚═══════════════════════════════════════════════════════════════\n`)
 
   } catch (err: any) {
     console.error('\n╔═══════════════════════════════════════════════════════════════')
-    console.error('║ ❌ BUILD PIPELINE FAILED')
+    console.error('║ ❌ INITIAL BUILD FAILED')
     console.error('╚═══════════════════════════════════════════════════════════════')
     console.error('Error:', err)
-    if (card) {
-      await postComment(cardId, `❌ Build failed: ${err.message}`)
-      await moveCardToList(cardId, LIST_IDS.failed)
-    }
-    console.error('')
+    throw err
   }
 }
 
-// ─── Stage 2: Approve & Merge ────────────────────────────────────────────────
+// ─── Rebuild ─────────────────────────────────────────────────────────────────
 
-async function runApprovalPipeline(cardId: string) {
+async function runRebuild(cardId: string, card: any, branchName: string, prNumber: number) {
+  try {
+    await postComment(cardId, '🔄 Rebuild started — updating preview with new changes...')
+
+    console.log(`\n[1/6] 🔍 Checking for Google Docs links...`)
+    const googleDocLinks = extractGoogleDocLinks(card.desc)
+    console.log(`      Found ${googleDocLinks.length} Google Doc link(s)`)
+
+    console.log(`\n[2/6] 🔍 Parsing page path from card title...`)
+    const pagePath = parsePagePath(card.name)
+    if (pagePath) {
+      console.log(`      Target file: ${pagePath}`)
+    } else {
+      console.log(`      ℹ️  No page path in title — will let Claude determine target from brief`)
+    }
+
+    // Fetch current file from branch (not master - get the existing work)
+    console.log(`\n[3/6] 📂 Fetching existing files from branch...`)
+    const existingFiles: Record<string, string> = {}
+    if (pagePath) {
+      try {
+        const { content } = await getFileContent(pagePath)
+        existingFiles[pagePath] = content
+        console.log(`      ✅ Found existing file (${content.length} chars)`)
+      } catch {
+        console.log(`      ℹ️  File not found — will create new page`)
+      }
+    }
+
+    // Pull down Google Docs content
+    const attachments: string[] = []
+    if (googleDocLinks.length > 0) {
+      console.log(`\n[4/6] 📄 Fetching Google Docs content...`)
+      for (const link of googleDocLinks) {
+        const docId = extractGoogleDocId(link)
+        if (docId) {
+          try {
+            const content = await fetchGoogleDocContent(docId)
+            attachments.push(`[Google Doc: ${link}]\n${content}`)
+          } catch (err: any) {
+            console.warn(`      ⚠️  Could not fetch Google Doc: ${err.message}`)
+          }
+        }
+      }
+    }
+
+    // Pull down text attachments
+    const textAttachments = (card.attachments ?? []).filter(
+      (att: any) => att.mimeType?.startsWith('text') || att.name?.endsWith('.md')
+    )
+    for (const att of textAttachments) {
+      try {
+        attachments.push(`[${att.name}]\n` + await getAttachmentContent(att.url))
+      } catch {
+        console.warn(`      ⚠️  Could not fetch attachment: ${att.name}`)
+      }
+    }
+
+    // Generate updated changes with Claude
+    console.log(`\n[5/6] 🤖 Calling Claude to regenerate changes...`)
+    const generation = await generateChanges({
+      prompt:        card.desc,
+      pageTarget:    pagePath || 'To be determined from brief',
+      existingFiles,
+      attachments,
+    })
+    console.log(`      ✅ Generation complete`)
+    console.log(`      Files modified: ${Object.keys(generation.files).length}`)
+
+    // Force-push updated files to existing branch
+    console.log(`\n[6/6] 💾 Force-pushing updated files to branch...`)
+    await commitFiles(
+      branchName,
+      generation.files,
+      `seo: ${card.name} (updated)\n\nRegenerated from Trello card ${cardId}`
+    )
+    console.log(`      ✅ Files committed (Netlify will auto-rebuild)`)
+
+    // Wait for new Netlify preview
+    console.log(`\n⏳ Waiting for updated Netlify preview URL...`)
+    await new Promise(r => setTimeout(r, 10_000)) // Give Netlify a moment to start
+    const previewUrl = await waitForPreview(prNumber)
+
+    if (previewUrl) {
+      console.log(`      ✅ Preview ready: ${previewUrl}`)
+    }
+
+    const comment = previewUrl
+      ? `🔄 **Preview updated:** ${previewUrl}\n\nPR: https://github.com/${process.env.GITHUB_OWNER}/${process.env.GITHUB_REPO}/pull/${prNumber}\n\n✅ Move to **Ready to Publish** to go live\n🔄 Need more changes? Update the description and drag back to **Ready to Build**`
+      : `🔄 **Preview rebuilding...** Check PR for status: https://github.com/${process.env.GITHUB_OWNER}/${process.env.GITHUB_REPO}/pull/${prNumber}`
+
+    await postComment(cardId, comment)
+
+    console.log(`\n📌 Moving card back to "Ready to Preview" list...`)
+    await moveCardToList(cardId, LIST_IDS.readyToPreview)
+
+    console.log(`\n╔═══════════════════════════════════════════════════════════════`)
+    console.log(`║ ✅ REBUILD COMPLETED SUCCESSFULLY`)
+    console.log(`╚═══════════════════════════════════════════════════════════════\n`)
+
+  } catch (err: any) {
+    console.error('\n╔═══════════════════════════════════════════════════════════════')
+    console.error('║ ❌ REBUILD FAILED')
+    console.error('╚═══════════════════════════════════════════════════════════════')
+    console.error('Error:', err)
+    throw err
+  }
+}
+
+// ─── Stage 2: Publish & Merge ────────────────────────────────────────────────
+
+async function runPublishPipeline(cardId: string) {
   let card
 
   try {
     console.log(`\n╔═══════════════════════════════════════════════════════════════`)
-    console.log(`║ 🚀 APPROVAL PIPELINE STARTED`)
+    console.log(`║ 🚀 PUBLISH PIPELINE STARTED`)
     console.log(`╚═══════════════════════════════════════════════════════════════`)
 
     console.log(`\n[1/4] 📥 Fetching card details...`)
     card = await getCard(cardId)
     console.log(`      Card: "${card.name}"`)
 
-    await postComment(cardId, '🚀 Approved — merging to master...')
+    await postComment(cardId, '🚀 Publishing — merging to master...')
 
     console.log(`\n[2/4] 🔍 Looking up PR for branch...`)
     const branchName = `seo/${slugify(card.name)}-${cardId.slice(-6)}`
@@ -257,24 +389,24 @@ async function runApprovalPipeline(cardId: string) {
     console.log(`      ✅ Found PR #${prNumber}`)
 
     console.log(`\n[3/4] 🔀 Merging PR to master...`)
-    await mergePR(prNumber, `seo: ${card.name} [approved via Trello]`)
+    await mergePR(prNumber, `seo: ${card.name} [published via Trello]`)
     console.log(`      ✅ PR merged successfully`)
 
-    console.log(`\n[4/4] 📌 Moving card to "Live" list...`)
+    console.log(`\n[4/4] 📌 Moving card to "Done" list...`)
     await postComment(cardId, '✅ Merged to master — Netlify is deploying. Changes will be live shortly.')
-    await moveCardToList(cardId, LIST_IDS.live)
+    await moveCardToList(cardId, LIST_IDS.done)
 
     console.log(`\n╔═══════════════════════════════════════════════════════════════`)
-    console.log(`║ ✅ APPROVAL PIPELINE COMPLETED SUCCESSFULLY`)
+    console.log(`║ ✅ PUBLISH PIPELINE COMPLETED SUCCESSFULLY`)
     console.log(`╚═══════════════════════════════════════════════════════════════\n`)
 
   } catch (err: any) {
     console.error('\n╔═══════════════════════════════════════════════════════════════')
-    console.error('║ ❌ APPROVAL PIPELINE FAILED')
+    console.error('║ ❌ PUBLISH PIPELINE FAILED')
     console.error('╚═══════════════════════════════════════════════════════════════')
     console.error('Error:', err)
     if (card) {
-      await postComment(cardId, `❌ Merge failed: ${err.message}`)
+      await postComment(cardId, `❌ Publish failed: ${err.message}`)
     }
     console.error('')
   }
