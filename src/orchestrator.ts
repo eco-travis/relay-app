@@ -22,6 +22,7 @@ import {
   extractGoogleDocId,
   fetchGoogleDocContent,
 } from './google-docs-client'
+import { getRepoContext, getSimilarPages } from './repo-context'
 
 const LIST_IDS = {
   inProgress:   process.env.TRELLO_LIST_IN_PROGRESS!,
