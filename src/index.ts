@@ -70,7 +70,7 @@ app.post('/webhook/trello', async (req, res) => {
 })
 
 // Health check
-app.get('/', (_req, res) => res.json({ status: 'ok', app: 'greenlit' }))
+app.get('/', (_req, res) => res.json({ status: 'ok', app: 'relay-app' }))
 
 // Only call listen() when running locally (not in Netlify Functions)
 if (process.env.NODE_ENV !== 'production') {

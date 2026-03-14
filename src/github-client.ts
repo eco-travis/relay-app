@@ -35,7 +35,7 @@ async function gh(path: string, options?: RequestInit) {
 }
 
 export async function getMasterSha(): Promise<string> {
-  const data = await gh(`/repos/${getOwner()}/${getRepo()}/git/ref/heads/master`)
+  const data: any = await gh(`/repos/${getOwner()}/${getRepo()}/git/ref/heads/master`)
   return data.object.sha
 }
 
@@ -49,7 +49,7 @@ export async function createBranch(branchName: string, fromSha: string): Promise
 export async function getFileContent(
   filePath: string
 ): Promise<{ content: string; sha: string }> {
-  const data = await gh(`/repos/${getOwner()}/${getRepo()}/contents/${filePath}`)
+  const data: any = await gh(`/repos/${getOwner()}/${getRepo()}/contents/${filePath}`)
   return {
     content: Buffer.from(data.content, 'base64').toString('utf-8'),
     sha:     data.sha,
@@ -66,9 +66,9 @@ export async function commitFiles(
   files: FileChange[],
   message: string
 ): Promise<void> {
-  const refData    = await gh(`/repos/${getOwner()}/${getRepo()}/git/ref/heads/${branchName}`)
+  const refData: any    = await gh(`/repos/${getOwner()}/${getRepo()}/git/ref/heads/${branchName}`)
   const commitSha  = refData.object.sha
-  const commitData = await gh(`/repos/${getOwner()}/${getRepo()}/git/commits/${commitSha}`)
+  const commitData: any = await gh(`/repos/${getOwner()}/${getRepo()}/git/commits/${commitSha}`)
   const treeSha    = commitData.tree.sha
 
   const tree = files.map(f => ({
@@ -78,12 +78,12 @@ export async function commitFiles(
     content: f.content,
   }))
 
-  const newTree = await gh(`/repos/${getOwner()}/${getRepo()}/git/trees`, {
+  const newTree: any = await gh(`/repos/${getOwner()}/${getRepo()}/git/trees`, {
     method: 'POST',
     body:   JSON.stringify({ base_tree: treeSha, tree }),
   })
 
-  const newCommit = await gh(`/repos/${getOwner()}/${getRepo()}/git/commits`, {
+  const newCommit: any = await gh(`/repos/${getOwner()}/${getRepo()}/git/commits`, {
     method: 'POST',
     body:   JSON.stringify({ message, tree: newTree.sha, parents: [commitSha] }),
   })
@@ -102,7 +102,7 @@ export async function openPR(
   return gh(`/repos/${getOwner()}/${getRepo()}/pulls`, {
     method: 'POST',
     body:   JSON.stringify({ title, body, head: branchName, base: 'master' }),
-  })
+  }) as Promise<{ number: number; html_url: string }>
 }
 
 export async function getPreviewUrl(prNumber: number): Promise<string | null> {
@@ -126,7 +126,7 @@ export async function getPreviewUrl(prNumber: number): Promise<string | null> {
 }
 
 export async function getPRForBranch(branchName: string): Promise<number | null> {
-  const data = await gh(
+  const data: any = await gh(
     `/repos/${getOwner()}/${getRepo()}/pulls?head=${getOwner()}:${branchName}&state=open`
   )
   return data[0]?.number ?? null
@@ -141,7 +141,7 @@ export async function mergePR(prNumber: number, message: string): Promise<void> 
 
 export async function listDirectory(path: string): Promise<string[]> {
   try {
-    const data = await gh(`/repos/${getOwner()}/${getRepo()}/contents/${path}`)
+    const data: any = await gh(`/repos/${getOwner()}/${getRepo()}/contents/${path}`)
     if (Array.isArray(data)) {
       return data.map((item: any) => item.name)
     }

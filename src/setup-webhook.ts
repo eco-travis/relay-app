@@ -32,7 +32,7 @@ async function registerWebhook() {
     throw new Error(`Failed to register webhook: ${err}`)
   }
 
-  const data = await res.json()
+  const data: any = await res.json()
   console.log('\n✅ Webhook registered successfully')
   console.log(`   ID:  ${data.id}`)
   console.log(`   URL: ${data.callbackURL}`)

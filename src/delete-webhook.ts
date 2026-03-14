@@ -20,7 +20,7 @@ async function listAndDeleteWebhooks() {
     throw new Error(`Failed to fetch webhooks: ${await res.text()}`)
   }
 
-  const webhooks = await res.json()
+  const webhooks: any = await res.json()
 
   if (webhooks.length === 0) {
     console.log('No webhooks found.')

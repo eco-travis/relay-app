@@ -27,7 +27,7 @@ export async function getCard(cardId: string): Promise<TrelloCard> {
     `${BASE}/cards/${cardId}?attachments=true&${qs(auth())}`
   )
   if (!res.ok) throw new Error(`Trello getCard failed: ${res.statusText}`)
-  return res.json()
+  return res.json() as Promise<TrelloCard>
 }
 
 export async function getAttachmentContent(url: string): Promise<string> {

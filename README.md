@@ -55,17 +55,62 @@ npm run setup-webhook
 ```
 
 ### 4. Deploy to Netlify
+
+#### Install Netlify CLI
 ```bash
 npm install -g netlify-cli
 netlify login
+```
+
+#### Create a new Netlify site
+```bash
 netlify init
+```
+
+Follow the prompts:
+- Create & configure a new site
+- Choose your team
+- Site name: (choose a name, e.g., `greenlit-seo-relay`)
+- Build command: `npm run build`
+- Directory to deploy: `dist`
+- Netlify functions folder: `netlify/functions`
+
+#### Set environment variables in Netlify
+
+Go to your Netlify site dashboard → Site settings → Environment variables, and add:
+
+```
+TRELLO_API_KEY=your_key
+TRELLO_TOKEN=your_token
+TRELLO_BOARD_ID=your_board_id
+TRELLO_WEBHOOK_SECRET=your_secret
+TRELLO_WEBHOOK_CALLBACK_URL=https://your-site.netlify.app
+TRELLO_LIST_READY_TO_BUILD=list_id
+TRELLO_LIST_READY_TO_PREVIEW=list_id
+TRELLO_LIST_READY_TO_PUBLISH=list_id
+TRELLO_LIST_DONE=list_id
+GITHUB_TOKEN=your_token
+GITHUB_OWNER=your_username
+GITHUB_REPO=your_repo
+ANTHROPIC_API_KEY=your_key
+```
+
+**Important:** Set `TRELLO_WEBHOOK_CALLBACK_URL` to your Netlify site URL (e.g., `https://greenlit-seo-relay.netlify.app`)
+
+#### Deploy
+```bash
 netlify deploy --prod
 ```
 
-Then update `TRELLO_WEBHOOK_CALLBACK_URL` in Netlify environment variables to your live URL and re-run:
+#### Register the webhook
+
+After deployment, register the Trello webhook with your live URL:
+
 ```bash
 npm run setup-webhook
 ```
+
+Your app is now live! Test it by moving a Trello card to "Ready to Build".
 
 ## CLAUDE.md
 
