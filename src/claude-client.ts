@@ -1,5 +1,7 @@
 import Anthropic from '@anthropic-ai/sdk'
 import { MCP_TOOLS, executeMCPTool } from './mcp-tools'
+import * as fs from 'fs'
+import * as path from 'path'
 
 let client: Anthropic | null = null
 
@@ -15,6 +17,20 @@ function getClient(): Anthropic {
   return client
 }
 
+// Read local CLAUDE.md file if it exists
+function getLocalClaudeGuidelines(): string {
+  const claudeMdPath = path.resolve(process.cwd(), 'CLAUDE.md')
+  try {
+    if (fs.existsSync(claudeMdPath)) {
+      const content = fs.readFileSync(claudeMdPath, 'utf-8')
+      return `\n\n## ADDITIONAL GUIDELINES FROM CLAUDE.MD\n${content}`
+    }
+  } catch (err) {
+    console.warn('      ⚠️  Could not read CLAUDE.md:', err)
+  }
+  return ''
+}
+
 export interface GenerationInput {
   prompt:         string
   pageTarget:     string
@@ -28,7 +44,10 @@ export interface GenerationOutput {
   summary: string
 }
 
-const SYSTEM_PROMPT = `
+function buildSystemPrompt(): string {
+  const localGuidelines = getLocalClaudeGuidelines()
+
+  return `
 You are an expert SEO engineer working on a Gatsby TypeScript/React site. Your job is to make
 targeted, intelligent changes to page components based on SEO briefs.
 
@@ -99,7 +118,11 @@ OUTPUT REQUIREMENTS:
   ],
   "summary": "Brief description of changes made"
 }
+${localGuidelines}
 `.trim()
+}
+
+const SYSTEM_PROMPT = buildSystemPrompt()
 
 export async function generateChanges(
   input: GenerationInput
