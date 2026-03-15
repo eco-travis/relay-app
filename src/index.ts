@@ -56,18 +56,39 @@ async function handleWebhook(req: express.Request, res: express.Response) {
 
   if (!card || listBefore === listAfter) return res.sendStatus(200)
 
-  // Process pipeline BEFORE responding (required for serverless)
-  try {
-    if (listAfter === LIST_IDS.readyToBuild) {
-      await handleCardMoved(card.id, 'ready-to-build')
-    } else if (listAfter === LIST_IDS.readyToPublish) {
-      await handleCardMoved(card.id, 'ready-to-publish')
-    }
-    res.sendStatus(200)
-  } catch (err) {
-    console.error('❌ Pipeline error:', err)
-    res.sendStatus(500)
+  // Determine event type
+  let eventType: 'ready-to-build' | 'ready-to-publish' | null = null
+  if (listAfter === LIST_IDS.readyToBuild) {
+    eventType = 'ready-to-build'
+  } else if (listAfter === LIST_IDS.readyToPublish) {
+    eventType = 'ready-to-publish'
   }
+
+  if (!eventType) return res.sendStatus(200)
+
+  console.log(`🚀 Triggering background processing for card ${card.id}, event: ${eventType}`)
+
+  // Trigger background function - await just to get the 202 response, then return
+  const backgroundUrl = `${process.env.TRELLO_WEBHOOK_CALLBACK_URL}/.netlify/functions/process-card-background`
+
+  try {
+    const bgResponse = await fetch(backgroundUrl, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(req.body),
+    })
+
+    if (bgResponse.ok || bgResponse.status === 202) {
+      console.log(`✅ Background function triggered (status: ${bgResponse.status})`)
+    } else {
+      console.error(`❌ Background function returned status: ${bgResponse.status}`)
+    }
+  } catch (err) {
+    console.error('❌ Failed to trigger background function:', err)
+  }
+
+  // Respond to Trello after triggering background function
+  return res.sendStatus(200)
 }
 
 app.post('/webhook/trello', handleWebhook)

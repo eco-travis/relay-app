@@ -71,11 +71,32 @@ export async function commitFiles(
   const commitData: any = await gh(`/repos/${getOwner()}/${getRepo()}/git/commits/${commitSha}`)
   const treeSha    = commitData.tree.sha
 
-  const tree = files.map(f => ({
-    path:    f.path,
-    mode:    '100644',
-    type:    'blob',
-    content: f.content,
+  const tree = await Promise.all(files.map(async f => {
+    // For image files (in public/images/), create a blob with base64 encoding
+    if (f.path.startsWith('public/images/')) {
+      const blob: any = await gh(`/repos/${getOwner()}/${getRepo()}/git/blobs`, {
+        method: 'POST',
+        body: JSON.stringify({
+          content: f.content,
+          encoding: 'base64',
+        }),
+      })
+
+      return {
+        path: f.path,
+        mode: '100644',
+        type: 'blob',
+        sha: blob.sha,
+      }
+    }
+
+    // For text files, use content directly
+    return {
+      path: f.path,
+      mode: '100644',
+      type: 'blob',
+      content: f.content,
+    }
   }))
 
   const newTree: any = await gh(`/repos/${getOwner()}/${getRepo()}/git/trees`, {
@@ -109,19 +130,55 @@ export async function getPreviewUrl(prNumber: number): Promise<string | null> {
   const data: any = await gh(`/repos/${getOwner()}/${getRepo()}/pulls/${prNumber}`)
   const sha = data.head.sha
 
-  // Use deployments API to get the actual preview URL (not the build details page)
+  console.log(`      Checking for preview URL for SHA: ${sha.substring(0, 7)}`)
+
+  // First try commit statuses (Netlify uses this for deploy previews)
+  const statuses = (await gh(`/repos/${getOwner()}/${getRepo()}/commits/${sha}/statuses`)) as any[]
+
+  console.log(`      Found ${statuses.length} commit status(es)`)
+
+  for (const status of statuses) {
+    console.log(`        - Context: ${status.context}, State: ${status.state}, URL: ${status.target_url || 'none'}`)
+
+    // Look for Netlify deploy preview status
+    if (status.context?.includes('netlify') && status.state === 'success' && status.target_url) {
+      // The target_url might be the deploy details page, check the description for the actual preview URL
+      const description = status.description || ''
+
+      // Try to extract preview URL from description or use target_url
+      const previewUrlMatch = description.match(/https:\/\/deploy-preview-\d+--[^.]+\.netlify\.app/)
+      if (previewUrlMatch) {
+        console.log(`      ✅ Found preview URL in description: ${previewUrlMatch[0]}`)
+        return previewUrlMatch[0]
+      }
+
+      // If target_url looks like a deploy preview, use it
+      if (status.target_url.includes('deploy-preview-')) {
+        console.log(`      ✅ Found preview URL in target_url: ${status.target_url}`)
+        return status.target_url
+      }
+    }
+  }
+
+  // Fall back to deployments API (in case Netlify is configured to use it)
+  console.log(`      Checking deployments API...`)
   const deployments = (await gh(`/repos/${getOwner()}/${getRepo()}/deployments?sha=${sha}`)) as any[]
 
+  console.log(`      Found ${deployments.length} deployment(s)`)
+
   for (const deployment of deployments) {
-    const statuses = (await gh(
+    const depStatuses = (await gh(
       `/repos/${getOwner()}/${getRepo()}/deployments/${deployment.id}/statuses`
     )) as any[]
-    const successful = statuses.find((s: any) => s.state === 'success')
+
+    const successful = depStatuses.find((s: any) => s.state === 'success')
     if (successful?.environment_url) {
+      console.log(`      ✅ Found preview URL in deployment: ${successful.environment_url}`)
       return successful.environment_url
     }
   }
 
+  console.log(`      ❌ No preview URL found`)
   return null
 }
 

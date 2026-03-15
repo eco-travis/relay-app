@@ -40,6 +40,17 @@ export async function getAttachmentContent(url: string): Promise<string> {
   return res.text()
 }
 
+export async function getAttachmentBuffer(url: string): Promise<Buffer> {
+  const res = await fetch(url, {
+    headers: {
+      Authorization: `OAuth oauth_consumer_key="${auth().key}", oauth_token="${auth().token}"`,
+    },
+  })
+  if (!res.ok) throw new Error(`Attachment fetch failed: ${res.statusText}`)
+  const arrayBuffer = await res.arrayBuffer()
+  return Buffer.from(arrayBuffer)
+}
+
 export async function postComment(cardId: string, text: string): Promise<void> {
   await fetch(`${BASE}/cards/${cardId}/actions/comments?${qs(auth())}`, {
     method:  'POST',

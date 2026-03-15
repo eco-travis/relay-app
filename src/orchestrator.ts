@@ -1,6 +1,7 @@
 import {
   getCard,
   getAttachmentContent,
+  getAttachmentBuffer,
   postComment,
   moveCardToList,
 } from './trello-client'
@@ -185,6 +186,41 @@ async function runInitialBuild(cardId: string, card: any, branchName: string) {
       }
     }
 
+    // Handle image attachments
+    console.log(`\n[5b/9] 🖼️  Checking for image attachments...`)
+    const imageAttachments = (card.attachments ?? []).filter(
+      (att: any) => att.mimeType?.startsWith('image/')
+    )
+    console.log(`      Found ${imageAttachments.length} image attachment(s)`)
+
+    const imageFiles: Array<{ path: string; content: string; fileName: string }> = []
+    for (const att of imageAttachments) {
+      try {
+        console.log(`      - Downloading image: ${att.name}`)
+        const imageBuffer = await getAttachmentBuffer(att.url)
+        const base64Content = imageBuffer.toString('base64')
+
+        // Store images in public/images directory
+        const sanitizedName = att.name.replace(/[^a-z0-9._-]/gi, '-').toLowerCase()
+        const imagePath = `public/images/${sanitizedName}`
+
+        imageFiles.push({
+          path: imagePath,
+          content: base64Content,
+          fileName: sanitizedName,
+        })
+
+        // Add reference to attachments for Claude
+        attachments.push(`[Image: ${att.name}]
+Will be uploaded to: /${imagePath}
+You can reference this image in the page content.`)
+
+        console.log(`      ✅ Prepared image: ${sanitizedName}`)
+      } catch (err: any) {
+        console.warn(`      ⚠️  Could not fetch image: ${att.name} - ${err.message}`)
+      }
+    }
+
     // Generate changes with Claude
     console.log(`\n[6/9] 🤖 Calling Claude to generate changes...`)
     const generation = await generateChanges({
@@ -194,7 +230,16 @@ async function runInitialBuild(cardId: string, card: any, branchName: string) {
       attachments,
     })
     console.log(`      ✅ Generation complete`)
-    console.log(`      Files modified: ${Object.keys(generation.files).length}`)
+    console.log(`      Files modified: ${generation.files.length}`)
+
+    // Add image files to the generation output
+    for (const img of imageFiles) {
+      generation.files.push({
+        path: img.path,
+        content: img.content,
+      })
+      console.log(`      + Added image: ${img.path}`)
+    }
 
     // Create branch and commit
     console.log(`\n[7/9] 🌿 Creating Git branch: ${branchName}`)
@@ -342,6 +387,39 @@ async function runRebuild(cardId: string, card: any, branchName: string, prNumbe
       }
     }
 
+    // Handle image attachments
+    console.log(`\n[4b/6] 🖼️  Checking for image attachments...`)
+    const imageAttachments = (card.attachments ?? []).filter(
+      (att: any) => att.mimeType?.startsWith('image/')
+    )
+    console.log(`      Found ${imageAttachments.length} image attachment(s)`)
+
+    const imageFiles: Array<{ path: string; content: string; fileName: string }> = []
+    for (const att of imageAttachments) {
+      try {
+        console.log(`      - Downloading image: ${att.name}`)
+        const imageBuffer = await getAttachmentBuffer(att.url)
+        const base64Content = imageBuffer.toString('base64')
+
+        const sanitizedName = att.name.replace(/[^a-z0-9._-]/gi, '-').toLowerCase()
+        const imagePath = `public/images/${sanitizedName}`
+
+        imageFiles.push({
+          path: imagePath,
+          content: base64Content,
+          fileName: sanitizedName,
+        })
+
+        attachments.push(`[Image: ${att.name}]
+Will be uploaded to: /${imagePath}
+You can reference this image in the page content.`)
+
+        console.log(`      ✅ Prepared image: ${sanitizedName}`)
+      } catch (err: any) {
+        console.warn(`      ⚠️  Could not fetch image: ${att.name} - ${err.message}`)
+      }
+    }
+
     // Generate updated changes with Claude
     console.log(`\n[5/6] 🤖 Calling Claude to regenerate changes...`)
     const generation = await generateChanges({
@@ -351,7 +429,16 @@ async function runRebuild(cardId: string, card: any, branchName: string, prNumbe
       attachments,
     })
     console.log(`      ✅ Generation complete`)
-    console.log(`      Files modified: ${Object.keys(generation.files).length}`)
+    console.log(`      Files modified: ${generation.files.length}`)
+
+    // Add image files to the generation output
+    for (const img of imageFiles) {
+      generation.files.push({
+        path: img.path,
+        content: img.content,
+      })
+      console.log(`      + Added image: ${img.path}`)
+    }
 
     // Force-push updated files to existing branch
     console.log(`\n[6/6] 💾 Force-pushing updated files to branch...`)

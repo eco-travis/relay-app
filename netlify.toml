@@ -6,6 +6,9 @@
 [functions]
   node_bundler = "esbuild"
 
+[functions.webhook]
+  timeout = 300  # 5 minutes (max for Pro plan)
+
 [[redirects]]
   from = "/webhook/trello"
   to = "/.netlify/functions/webhook/webhook/trello"
